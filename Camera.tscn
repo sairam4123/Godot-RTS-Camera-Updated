@@ -28,8 +28,20 @@ zooming/speed = 1
 zooming/min_distance = 10
 zooming/max_distance = 80
 looking/speed = 8
-panning/speed = 10
+panning/speed = 20
+perspective_panning/enabled = false
+perspective_panning/speed = 10
 mouse/sensitivity = 0.03
+option/disable_edge_scrolling_when_using_mouse = true
+option/target_zoom = true
+option/zoom_to_cursor = false
+option/invert/zooming = null
+option/invert/panning = null
+option/invert/rotation = null
+option/invert/rotation_keys = null
+option/invert/tilting = null
+limits/enabled = true
+limits/rect = Rect2( -2450, -2450, 4900, 4900 )
 
 [node name="CameraTilt" type="Spatial" parent="."]
 transform = Transform( 1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 0, 0 )

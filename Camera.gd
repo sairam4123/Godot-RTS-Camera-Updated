@@ -42,14 +42,21 @@ var looking_fast_speed_wait_time = 2
 var looking_speed_multiplier = 2
 
 var panning_enabled = true
-var panning_speed = 10
+var panning_speed = 20
 var panning_fast_speed_wait_time = 2
 var panning_speed_multiplier = 2
 
 var scrolling_enabled = true
-var scrolling_speed = 10
+var scrolling_speed = 30
 var scrolling_fast_speed_wait_time = 2
 var scrolling_speed_multiplier = 2
+
+## Disable limits in your own risk, this might break the camera.
+var limits_enabled = true
+var limits_rect = Rect2(Vector2(-2450,-2450), Vector2(4900, 4900))
+
+var perspective_panning_enabled = false
+var perspective_panning_speed = 10
 
 var _new_translation
 var _new_rotation
@@ -72,7 +79,13 @@ var mouse_sensitivity = 0.03
 var _tilt = deg2rad(-45)
 
 var option_target_zoom = true
-var option_zoom_to_cursor = true
+var option_zoom_to_cursor = false
+var option_disable_edge_scrolling_when_using_mouse = true
+var option_invert_zooming = false
+var option_invert_panning = false
+var option_invert_rotation_keys = false
+var option_invert_rotation = false
+var option_invert_tilting = false
 
 func _ready() -> void:
 	if !Engine.editor_hint:
@@ -103,31 +116,40 @@ func _input(event: InputEvent) -> void:
 	if Engine.editor_hint or !camera_enabled:
 		return
 
+	if event is InputEventMouseButton and option_disable_edge_scrolling_when_using_mouse:
+		if event.button_index in [BUTTON_LEFT, BUTTON_RIGHT] and event.pressed:
+			edge_scroll_enabled = false
+		if event.button_index in [BUTTON_LEFT, BUTTON_RIGHT] and !event.pressed:
+			edge_scroll_enabled = true
+
 	if event is InputEventMouseButton:
 		if scrolling_enabled:
 			if event.button_index == BUTTON_WHEEL_DOWN:
-				_new_zoom += Vector3.BACK * scrolling_speed * mouse_sensitivity
+				_new_zoom += Vector3.BACK * scrolling_speed * mouse_sensitivity * (2 * int(!option_invert_zooming) - 1)
 				if option_target_zoom:
-					_new_tilt_rotation += Vector3.RIGHT * -deg2rad(tilting_speed) * scrolling_speed/2 * mouse_sensitivity
+					_new_tilt_rotation += Vector3.RIGHT * -deg2rad(tilting_speed) * scrolling_speed/2 * mouse_sensitivity * (2 * int(!option_invert_zooming) - 1)
 			if event.button_index == BUTTON_WHEEL_UP:
-				_new_zoom += Vector3.BACK * -scrolling_speed * mouse_sensitivity
+				_new_zoom += Vector3.BACK * -scrolling_speed * mouse_sensitivity * (2 * int(!option_invert_zooming) - 1)
 				if option_target_zoom:
-					_new_tilt_rotation += Vector3.RIGHT * deg2rad(tilting_speed) * scrolling_speed/2 * mouse_sensitivity
+					_new_tilt_rotation += Vector3.RIGHT * deg2rad(tilting_speed) * scrolling_speed/2 * mouse_sensitivity * (2 * int(!option_invert_zooming) - 1)
 
 	if event is InputEventMouseMotion:
 		if event.button_mask == BUTTON_LEFT and looking_enabled:
-			_new_rotation += Vector3.UP * -event.relative.x * deg2rad(looking_speed) * mouse_sensitivity
-			_new_tilt_rotation += Vector3.RIGHT * -event.relative.y * deg2rad(looking_speed) * mouse_sensitivity
+			_new_rotation += Vector3.UP * -event.relative.x * deg2rad(looking_speed) * mouse_sensitivity * (2 * int(!option_invert_rotation) - 1)
+			_new_tilt_rotation += Vector3.RIGHT * -event.relative.y * deg2rad(looking_speed) * mouse_sensitivity * (2 * int(!option_invert_tilting) - 1)
+			_tilt += -event.relative.y * deg2rad(looking_speed) * mouse_sensitivity * (2 * int(!option_invert_tilting) - 1)
 
-		if event.button_mask == BUTTON_RIGHT and panning_enabled:
-			_new_translation += -(global_transform.basis.z * event.relative.y + global_transform.basis.x * event.relative.x) * panning_speed * mouse_sensitivity
+		if event.button_mask == BUTTON_RIGHT:
+			if perspective_panning_enabled:
+				_new_translation += -(global_transform.basis.z * event.relative.y + global_transform.basis.x * event.relative.x) * perspective_panning_speed * mouse_sensitivity * (2 * int(!option_invert_panning) - 1)
+			elif panning_enabled:
+				_new_translation += -(global_transform.basis.z * event.relative.normalized().y + global_transform.basis.x * event.relative.normalized().x) * panning_speed * mouse_sensitivity * (2 * int(!option_invert_panning) - 1)
 
 func _process(delta: float) -> void:
 	if Engine.editor_hint or !camera_enabled:
 		return
 
 	$CameraTilt/CameraZoom.far = far
-	var clamp_rect = Rect2(Vector2(-2450,-2450), Vector2(4900, 4900))
 	var _mouse_position = get_viewport().get_mouse_position()
 	var visible_rect = get_viewport().get_visible_rect()
 	if edge_scroll_enabled:
@@ -141,6 +163,8 @@ func _process(delta: float) -> void:
 			if _mouse_position.y > visible_rect.size.y-(visible_rect.size.y*edge_scroll_detection_area):
 				_new_translation += global_transform.basis.z
 			global_transform.origin = global_transform.origin.linear_interpolate(_new_translation*edge_scroll_speed, delta*edge_scroll_time)
+			if limits_enabled:
+				global_transform.origin = clamp_camera(limits_rect, global_transform.origin)
 
 	if movement_enabled:
 		if OS.is_window_focused() and !_is_panning:
@@ -182,24 +206,25 @@ func _process(delta: float) -> void:
 #				movement_time /= movement_speed_multiplier
 
 			global_transform.origin = global_transform.origin.linear_interpolate(_new_translation*movement_speed, delta*movement_time)
-			global_transform.origin = clamp_camera(clamp_rect, global_transform.origin)
+			if limits_enabled:
+				global_transform.origin = clamp_camera(limits_rect, global_transform.origin)
 
 	if rotation_enabled:
 		if Input.is_action_pressed("camera_rotate_x"):
-			_new_rotation += Vector3.UP * deg2rad(rotation_speed)
+			_new_rotation += Vector3.UP * deg2rad(rotation_speed) * (2 * int(!option_invert_rotation_keys) - 1)
 		if Input.is_action_pressed("camera_rotate_-x"):
-			_new_rotation += Vector3.UP * -deg2rad(rotation_speed)
+			_new_rotation += Vector3.UP * -deg2rad(rotation_speed) * (2 * int(!option_invert_rotation_keys) - 1)
 
 		_new_rotation.y = wrapf(_new_rotation.y, deg2rad(180), deg2rad(-180))
 		rotation = Quat(rotation).slerp(Quat(_new_rotation), delta*rotation_time).get_euler()
 
 	if tilting_enabled:
 		if Input.is_action_pressed("camera_tilt_y"):
-			_new_tilt_rotation += Vector3.RIGHT * deg2rad(tilting_speed)
-			_tilt += deg2rad(tilting_speed)
+			_new_tilt_rotation += Vector3.RIGHT * deg2rad(tilting_speed) * (2 * int(!option_invert_tilting) - 1)
+			_tilt += deg2rad(tilting_speed) * (2 * int(!option_invert_tilting) - 1)
 		if Input.is_action_pressed("camera_tilt_-y"):
-			_new_tilt_rotation += Vector3.RIGHT * -deg2rad(tilting_speed)
-			_tilt += -deg2rad(tilting_speed)
+			_new_tilt_rotation += Vector3.RIGHT * -deg2rad(tilting_speed) * (2 * int(!option_invert_tilting) - 1)
+			_tilt += -deg2rad(tilting_speed) * (2 * int(!option_invert_tilting) - 1)
 
 		_new_tilt_rotation.x = clamp(_new_tilt_rotation.x, deg2rad(tilting_min_angle), deg2rad(tilting_max_angle))
 		_tilt = clamp(_tilt, deg2rad(tilting_min_angle), deg2rad(tilting_max_angle))
@@ -207,28 +232,28 @@ func _process(delta: float) -> void:
 
 	if zooming_enabled:
 		if Input.is_action_pressed("camera_zoom_in"):
-			_new_zoom += Vector3.BACK * zooming_speed
+			_new_zoom += Vector3.BACK * zooming_speed * (2 * int(!option_invert_zooming) - 1)
 			if option_target_zoom:
-				_new_tilt_rotation += Vector3.RIGHT * -deg2rad(tilting_speed) * zooming_speed/2
+				_new_tilt_rotation += Vector3.RIGHT * -deg2rad(tilting_speed) * zooming_speed/2 * (2 * int(!option_invert_zooming) - 1)
 		if Input.is_action_pressed("camera_zoom_out"):
-			_new_zoom += Vector3.BACK * -zooming_speed
+			_new_zoom += Vector3.BACK * -zooming_speed * (2 * int(!option_invert_zooming) - 1)
 			if option_target_zoom:
-				_new_tilt_rotation += Vector3.RIGHT * deg2rad(tilting_speed) * zooming_speed/2
-		_new_tilt_rotation.x = clamp(_new_tilt_rotation.x, tilting_min_angle, _tilt)
+				_new_tilt_rotation += Vector3.RIGHT * deg2rad(tilting_speed) * zooming_speed/2 * (2 * int(!option_invert_zooming) - 1)
+		if option_target_zoom:
+			_new_tilt_rotation.x = clamp(_new_tilt_rotation.x, tilting_min_angle, _tilt)
 
 		var current_translation
 		if option_zoom_to_cursor:
 			current_translation = _cast_ray_to(_mouse_position)
 		_new_zoom.z = clamp(_new_zoom.z, zooming_min_distance, zooming_max_distance)
 		$CameraTilt/CameraZoom.translation = $CameraTilt/CameraZoom.translation.linear_interpolate(_new_zoom, delta*zooming_time)
-		if current_translation != Vector3.INF:
+		if current_translation != null and current_translation != Vector3.INF:
 			var new_translation = _cast_ray_to(_mouse_position)
-			if new_translation != Vector3.INF:
+			if new_translation != null and new_translation != Vector3.INF:
 				_new_translation += (current_translation - new_translation)
 
 func clamp_camera(rect: Rect2, position: Vector3):
-	print(rect.end)
-	return Vector3(clamp(position.x, rect.position.x, rect.end.x), 0, clamp(position.z, rect.position.y, rect.end.y))
+	return Vector3(clamp(position.x, rect.position.x, rect.end.x), position.y, clamp(position.z, rect.position.y, rect.end.y))
 
 func _cast_ray_to(postion: Vector2) -> Vector3:
 	var camera = get_viewport().get_camera()
@@ -376,9 +401,69 @@ func _get_property_list() -> Array:
 	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled and panning_enabled else PROPERTY_USAGE_STORAGE
 	})
 	properties.append({
+	"name": "perspective_panning/enabled",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "perspective_panning/speed",
+	"type": TYPE_REAL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled and perspective_panning_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
 	"name": "mouse/sensitivity",
 	"type": TYPE_REAL,
 	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "option/disable_edge_scrolling_when_using_mouse",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "option/target_zoom",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "option/zoom_to_cursor",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "option/invert/zooming",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "option/invert/panning",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "option/invert/rotation",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "option/invert/rotation_keys",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "option/invert/tilting",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "limits/enabled",
+	"type": TYPE_BOOL,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled else PROPERTY_USAGE_STORAGE
+	})
+	properties.append({
+	"name": "limits/rect",
+	"type": TYPE_RECT2,
+	"usage": PROPERTY_USAGE_DEFAULT if camera_enabled and limits_enabled else PROPERTY_USAGE_STORAGE
 	})
 	return properties
 
@@ -388,6 +473,22 @@ func _get(property: String):
 		match edited_property:
 			"enabled":
 				return camera_enabled
+
+	if str(property).begins_with("limits"):
+		var edited_property = str(property).trim_prefix("limits/")
+		match edited_property:
+			"enabled":
+				return limits_enabled
+			"rect":
+				return limits_rect
+
+	if str(property).begins_with("perspective_panning"):
+		var edited_property = str(property).trim_prefix("perspective_panning/")
+		match edited_property:
+			"enabled":
+				return perspective_panning_enabled
+			"speed":
+				return perspective_panning_speed
 
 	if str(property).begins_with("edge_scroll"):
 		var edited_property = str(property).trim_prefix("edge_scroll/")
@@ -471,6 +572,30 @@ func _get(property: String):
 			"sensitivity":
 				return mouse_sensitivity
 
+	if str(property).begins_with("option"):
+		var edited_property = str(property).trim_prefix("option/")
+		match edited_property:
+			"disable_edge_scrolling_when_using_mouse":
+				return option_disable_edge_scrolling_when_using_mouse
+			"target_zoom":
+				return option_target_zoom
+			"zoom_to_cursor":
+				return option_zoom_to_cursor
+		if edited_property.begins_with("invert"):
+			var inverted_property = str(property).trim_prefix("option/")
+			match inverted_property:
+				"zooming":
+					return option_invert_zooming
+				"panning":
+					return option_invert_panning
+				"rotation":
+					return option_invert_rotation
+				"rotation_keys":
+					return option_invert_rotation_keys
+				"tilting":
+					return option_invert_tilting
+
+
 func _set(property: String, value) -> bool:
 	if str(property).begins_with("camera"):
 		var edited_property = str(property).trim_prefix("camera/")
@@ -478,6 +603,29 @@ func _set(property: String, value) -> bool:
 			"enabled":
 				camera_enabled = value
 				property_list_changed_notify()
+				return true
+
+	if str(property).begins_with("limits"):
+		var edited_property = str(property).trim_prefix("limits/")
+		match edited_property:
+			"enabled":
+				limits_enabled = value
+				property_list_changed_notify()
+				return true
+			"rect":
+				limits_rect = value
+				return true
+
+	if str(property).begins_with("perspective_panning"):
+		var edited_property = str(property).trim_prefix("perspective_panning/")
+		match edited_property:
+			"enabled":
+				perspective_panning_enabled = value
+				panning_enabled = !value
+				property_list_changed_notify()
+				return true
+			"speed":
+				perspective_panning_speed = value
 				return true
 
 	if str(property).begins_with("edge_scroll"):
@@ -537,6 +685,12 @@ func _set(property: String, value) -> bool:
 			"speed":
 				tilting_speed = value
 				return true
+			"min_angle":
+				tilting_min_angle = value
+				return true
+			"max_angle":
+				tilting_max_angle = value
+				return true
 
 	if str(property).begins_with("zooming"):
 		var edited_property = str(property).trim_prefix("zooming/")
@@ -551,12 +705,19 @@ func _set(property: String, value) -> bool:
 			"speed":
 				zooming_speed = value
 				return true
+			"min_distance":
+				zooming_min_distance = value
+				return true
+			"max_distance":
+				zooming_max_distance = value
+				return true
 
 	if str(property).begins_with("panning"):
 		var edited_property = str(property).trim_prefix("panning/")
 		match edited_property:
 			"enabled":
 				panning_enabled = value
+				perspective_panning_enabled = !value
 				property_list_changed_notify()
 				return true
 			"speed":
@@ -579,6 +740,37 @@ func _set(property: String, value) -> bool:
 			"sensitivity":
 				mouse_sensitivity = value
 				return true
+
+	if str(property).begins_with("option"):
+		var edited_property = str(property).trim_prefix("option/")
+		match edited_property:
+			"disable_edge_scrolling_when_using_mouse":
+				option_disable_edge_scrolling_when_using_mouse = value
+				return true
+			"target_zoom":
+				option_target_zoom = value
+				return true
+			"zoom_to_cursor":
+				option_zoom_to_cursor = value
+				return true
+		if edited_property.begins_with("invert"):
+			var inverted_property = str(property).trim_prefix("option/")
+			match inverted_property:
+				"zooming":
+					option_invert_zooming = value
+					return true
+				"panning":
+					option_invert_panning = value
+					return true
+				"rotation":
+					option_invert_rotation = value
+					return true
+				"rotation_keys":
+					option_invert_rotation_keys = value
+					return true
+				"tilting":
+					option_invert_tilting = value
+					return true
 
 	return false
 
